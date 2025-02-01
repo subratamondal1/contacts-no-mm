@@ -6,8 +6,11 @@ exports.getUsers = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const search = req.query.search || '';
+    const assignedTo = req.query.assignedTo || null;
+    const unassignedOnly = req.query.unassignedOnly === 'true';
 
-    const query = search
+    // Build query based on user role and assignment
+    let query = search
       ? {
           $or: [
             { name: { $regex: search, $options: 'i' } },
@@ -21,11 +24,23 @@ exports.getUsers = async (req, res) => {
         }
       : {};
 
+    // Handle assignment filtering
+    if (assignedTo === 'null') {
+      query.isAssigned = false;
+    } else if (assignedTo) {
+      query.assignedTo = assignedTo;
+    } else if (unassignedOnly) {
+      query.isAssigned = false;
+    } else if (req.user.role !== 'admin') {
+      query.assignedTo = req.user.userId;
+    }
+
     const [users, total] = await Promise.all([
       User.find(query)
         .sort({ 'sl no': 1 })
         .skip((page - 1) * limit)
         .limit(limit)
+        .populate('assignedTo', 'name email')
         .lean(),
       User.countDocuments(query)
     ]);
@@ -44,7 +59,10 @@ exports.getUsers = async (req, res) => {
           { type: 'Phone 4', number: user['phone no 4'] }
         ].filter(phone => phone.number),
         address: user.address || '',
-        phoneStatuses: user.phoneStatuses || []
+        phoneStatuses: user.phoneStatuses || [],
+        assignedTo: user.assignedTo,
+        assignedAt: user.assignedAt,
+        isAssigned: user.isAssigned
       })),
       pagination: {
         total,
@@ -89,6 +107,82 @@ exports.getUserById = async (req, res) => {
   }
 };
 
+// Get contacts with pagination
+exports.getContacts = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const assignedTo = req.query.assignedTo || null;
+    const unassignedOnly = req.query.unassignedOnly === 'true';
+
+    // Build query based on user role and assignment
+    let query = search
+      ? {
+          $or: [
+            { name: { $regex: search, $options: 'i' } },
+            { 'pm no': { $regex: search, $options: 'i' } },
+            { 'enrollment no': { $regex: search, $options: 'i' } },
+            { 'phone no 1': { $regex: search, $options: 'i' } },
+            { 'phone no 2': { $regex: search, $options: 'i' } },
+            { 'phone no 3': { $regex: search, $options: 'i' } },
+            { 'phone no 4': { $regex: search, $options: 'i' } },
+          ]
+        }
+      : {};
+
+    // Handle assignment filtering
+    if (assignedTo === 'null') {
+      query.isAssigned = false;
+    } else if (assignedTo) {
+      query.assignedTo = assignedTo;
+    } else if (unassignedOnly) {
+      query.isAssigned = false;
+    } else if (req.user.role !== 'admin') {
+      query.assignedTo = req.user.userId;
+    }
+
+    const [users, total] = await Promise.all([
+      User.find(query)
+        .sort({ 'sl no': 1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('assignedTo', 'name email')
+        .lean(),
+      User.countDocuments(query)
+    ]);
+
+    res.json({
+      users: users.map(user => ({
+        _id: user._id,
+        slNo: user['sl no'],
+        pmNo: user['pm no'],
+        enrollmentNo: user['enrollment no'],
+        name: user.name,
+        phoneNumbers: [
+          { type: 'Phone 1', number: user['phone no 1'] },
+          { type: 'Phone 2', number: user['phone no 2'] },
+          { type: 'Phone 3', number: user['phone no 3'] },
+          { type: 'Phone 4', number: user['phone no 4'] }
+        ].filter(phone => phone.number),
+        address: user.address || '',
+        phoneStatuses: user.phoneStatuses || [],
+        assignedTo: user.assignedTo,
+        assignedAt: user.assignedAt,
+        isAssigned: user.isAssigned
+      })),
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // Toggle called status
 exports.togglePhoneCalled = async (req, res) => {
   try {
@@ -96,6 +190,11 @@ exports.togglePhoneCalled = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if the contact is assigned to the current user
+    if (req.user.role !== 'admin' && (!user.assignedTo || user.assignedTo.toString() !== req.user.userId)) {
+      return res.status(403).json({ message: 'Not authorized to update this contact' });
     }
 
     const { phoneNumber } = req.body;
@@ -108,11 +207,24 @@ exports.togglePhoneCalled = async (req, res) => {
       if (!user.phoneStatuses) {
         user.phoneStatuses = [];
       }
-      phoneStatus = { number: phoneNumber, called: false };
+      phoneStatus = {
+        number: phoneNumber,
+        called: false,
+        calledBy: null,
+        calledAt: null
+      };
       user.phoneStatuses.push(phoneStatus);
     }
 
     phoneStatus.called = !phoneStatus.called;
+    if (phoneStatus.called) {
+      phoneStatus.calledBy = req.user.userId;
+      phoneStatus.calledAt = new Date();
+    } else {
+      phoneStatus.calledBy = null;
+      phoneStatus.calledAt = null;
+    }
+
     await user.save();
 
     const transformedUser = {
@@ -128,7 +240,10 @@ exports.togglePhoneCalled = async (req, res) => {
         { type: 'Phone 4', number: user['phone no 4'] }
       ].filter(phone => phone.number),
       address: user.address || '',
-      phoneStatuses: user.phoneStatuses
+      phoneStatuses: user.phoneStatuses,
+      assignedTo: user.assignedTo,
+      assignedAt: user.assignedAt,
+      isAssigned: user.isAssigned
     };
 
     res.json(transformedUser);

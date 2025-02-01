@@ -19,10 +19,10 @@ app.get('/api/contacts', (req, res) => {
 });
 
 // Update contact called status
-app.put('/api/contacts/:id/called', (req, res) => {
+app.put('/api/contacts/:id/toggle-called', (req, res) => {
   const id = parseInt(req.params.id);
   contacts = contacts.map(contact => 
-    contact.id === id ? { ...contact, called: true } : contact
+    contact.id === id ? { ...contact, called: !contact.called } : contact
   );
   res.json(contacts.find(contact => contact.id === id));
 });

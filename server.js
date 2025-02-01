@@ -7,8 +7,8 @@ app.use(express.json());
 
 // Dummy contacts data
 let contacts = [
-  { id: 1, name: 'John Doe', phone: '+1234567890', called: false },
-  { id: 2, name: 'Jane Smith', phone: '+1987654321', called: false },
+  { id: 1, name: 'Naitik', phone: '7892044088', called: false },
+  { id: 2, name: 'Jane Smith', phone: '6294505807', called: false },
   { id: 3, name: 'Alice Johnson', phone: '+1122334455', called: false },
   { id: 4, name: 'Bob Wilson', phone: '+1555666777', called: false },
 ];

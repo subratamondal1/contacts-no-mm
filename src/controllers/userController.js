@@ -25,11 +25,14 @@ exports.getContacts = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
+    // Use the users_data collection
+    const UsersData = mongoose.model('users_data', User.schema);
+
     // First get the total count
-    const total = await User.countDocuments(query);
+    const total = await UsersData.countDocuments(query);
 
     // Then get the paginated results
-    const users = await User.find(query)
+    const users = await UsersData.find(query)
       .sort({ "sl no": 1 })
       .skip(skip)
       .limit(limit)
@@ -71,7 +74,7 @@ exports.getContacts = async (req, res) => {
 // Toggle called status
 exports.togglePhoneCalled = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id, { collection: 'users_data' });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -117,7 +120,7 @@ exports.togglePhoneCalled = async (req, res) => {
       phoneStatus.calledAt = null;
     }
 
-    await user.save();
+    await user.save({ collection: 'users_data' });
 
     const transformedUser = {
       _id: user._id,
@@ -241,26 +244,70 @@ exports.assignContacts = async (req, res) => {
   try {
     const { contactIds, userId } = req.body;
 
-    if (!contactIds || !Array.isArray(contactIds) || !userId) {
-      return res.status(400).json({ message: "Invalid request data" });
+    if (!contactIds || !userId) {
+      return res.status(400).json({ message: "Contact IDs and User ID are required" });
     }
 
-    // Update all selected contacts
-    await User.updateMany(
+    // Update the auth user's assignedContacts field
+    const authUser = await mongoose.model('auth').findByIdAndUpdate(
+      userId,
+      { 
+        $addToSet: { assignedContacts: { $each: contactIds } }
+      },
+      { new: true }
+    );
+
+    if (!authUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Update the assigned status in users_data collection
+    const UsersData = mongoose.model('users_data', User.schema);
+    await UsersData.updateMany(
       { _id: { $in: contactIds } },
-      {
-        $set: {
+      { 
+        $set: { 
           assignedTo: userId,
           assignedAt: new Date(),
-          isAssigned: true,
-        },
+          isAssigned: true
+        } 
       }
     );
 
-    res.json({ message: "Contacts assigned successfully" });
+    res.json({ 
+      message: "Users data assigned successfully",
+      assignedContacts: authUser.assignedContacts 
+    });
   } catch (error) {
     console.error("Assign contacts error:", error);
     res.status(500).json({ message: "Failed to assign contacts" });
+  }
+};
+
+// Get assigned contacts for a user
+exports.getAssignedContacts = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Get the auth user to get their assigned contact IDs
+    const authUser = await mongoose.model('auth').findById(userId);
+    if (!authUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Get the assigned contacts from users_data collection
+    const UsersData = mongoose.model('users_data', User.schema);
+    const contacts = await UsersData.find({
+      _id: { $in: authUser.assignedContacts }
+    }).lean();
+
+    res.json({
+      contacts,
+      total: contacts.length
+    });
+  } catch (error) {
+    console.error("Error getting assigned contacts:", error);
+    res.status(500).json({ message: "Failed to fetch assigned contacts" });
   }
 };
 
@@ -321,8 +368,8 @@ exports.getAssignedContacts = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const [contacts, total] = await Promise.all([
-      User.find(query).sort({ "sl no": 1 }).skip(skip).limit(limit).lean(),
-      User.countDocuments(query),
+      User.find(query, { collection: 'users_data' }).sort({ "sl no": 1 }).skip(skip).limit(limit).lean(),
+      User.countDocuments(query, { collection: 'users_data' }),
     ]);
 
     res.json({
@@ -337,5 +384,21 @@ exports.getAssignedContacts = async (req, res) => {
   } catch (error) {
     console.error("Get assigned contacts error:", error);
     res.status(500).json({ message: "Failed to fetch assigned contacts" });
+  }
+};
+
+// Get all application users
+exports.getUsers = async (req, res) => {
+  try {
+    // Only get users with role 'user' or 'admin'
+    const users = await User.find({ role: { $in: ["user", "admin"] } })
+      .select("_id name email role")
+      .sort({ name: 1 })
+      .lean();
+
+    res.json(users);
+  } catch (error) {
+    console.error("Error getting users:", error);
+    res.status(500).json({ message: "Failed to get users" });
   }
 };

@@ -32,6 +32,9 @@ router.get("/users/:id", async (req, res, next) => {
   }
 });
 
+// Get all users data (paginated)
+router.get("/users-data", authenticate, userController.getContacts);
+
 // Get all contacts (paginated)
 router.get("/contacts", authenticate, userController.getContacts);
 

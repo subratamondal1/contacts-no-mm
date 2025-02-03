@@ -44,12 +44,29 @@ const userSchema = new mongoose.Schema({
     called: {
       type: Boolean,
       default: false
-    }
-  }]
+    },
+    calledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Auth'
+    },
+    calledAt: Date
+  }],
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Auth',
+    default: null
+  },
+  assignedAt: {
+    type: Date,
+    default: null
+  },
+  isAssigned: {
+    type: Boolean,
+    default: false
+  }
 }, {
   collection: 'users_data',
-  strict: false,
-  timestamps: false
+  timestamps: true
 });
 
 // Add middleware to initialize phoneStatuses if not present

@@ -5,12 +5,14 @@ const { authenticate, isAdmin } = require('../middleware/auth');
 
 // Public routes
 router.post('/login', authController.login);
+router.post('/register', authController.register);
 
 // Protected routes - require authentication
-router.get('/me', authenticate, authController.getMe);
+router.get('/me', authenticate, authController.getProfile);
+router.get('/assigned-contacts', authenticate, authController.getAssignedContacts);
+router.post('/update-call-status', authenticate, authController.updateCallStatus);
 
 // Admin only routes
-router.post('/register', authenticate, isAdmin, authController.register);
 router.get('/users', authenticate, isAdmin, authController.getUsers);
 router.post('/assign-contacts', authenticate, isAdmin, authController.assignContacts);
 

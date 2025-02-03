@@ -1,110 +1,91 @@
-const Auth = require("../models/Auth");
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs");
-const mongoose = require("mongoose");
-const { ObjectId } = mongoose.Types;
-const Contact = require("../models/Contact");
+const Auth = require('../models/Auth');
 const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const authController = {
-  // Login user
   login: async (req, res) => {
     try {
       const { email, password } = req.body;
-      console.log("Login attempt for email:", email);
 
-      // Find user
+      // Find user by email
       const user = await Auth.findOne({ email });
-      console.log("User found:", user ? "Yes" : "No");
-
       if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      console.log("Stored password type:", typeof user.password);
-      console.log("Input password type:", typeof password);
-
-      // First try direct comparison (for existing plain text passwords)
-      const isPlainTextMatch = password === user.password;
-      console.log("Plain text match:", isPlainTextMatch);
-
-      if (isPlainTextMatch) {
-        console.log("Upgrading plain text password to hash");
-        // If it matches, we should hash it for future
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        await Auth.findByIdAndUpdate(user._id, { password: hashedPassword });
-      } else {
-        // Try comparing with bcrypt
-        console.log("Attempting bcrypt comparison");
-        const isMatch = await bcrypt.compare(password, user.password);
-        console.log("Bcrypt match:", isMatch);
-
-        if (!isMatch) {
-          return res.status(401).json({ message: "Invalid credentials" });
-        }
+      // Check password
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       // Create token
       const token = jwt.sign(
         { userId: user._id, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: "24h" }
+        { expiresIn: '24h' }
       );
 
-      // Update last active
-      await Auth.findByIdAndUpdate(user._id, {
-        $set: { "stats.lastActive": new Date() },
-      });
+      // Return user data (excluding password) and token
+      const userData = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      };
 
-      // Don't send password back
-      const userObject = user.toObject();
-      delete userObject.password;
-
-      console.log("Login successful for:", email);
-      res.json({
-        token,
-        user: userObject,
-      });
+      res.json({ token, user: userData });
     } catch (error) {
-      console.error("Login error:", error);
-      res.status(400).json({ message: error.message });
+      console.error('Login error:', error);
+      res.status(500).json({ message: 'Server error during login' });
     }
   },
 
-  // Register new user (admin only)
   register: async (req, res) => {
     try {
       const { name, email, password, role } = req.body;
 
       // Check if user exists
-      const existingUser = await Auth.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ message: "User already exists" });
+      let user = await Auth.findOne({ email });
+      if (user) {
+        return res.status(400).json({ message: 'User already exists' });
       }
 
       // Create new user
-      const user = new Auth({
+      user = new Auth({
         name,
         email,
         password,
-        role: role || "user",
+        role: role || 'user'
       });
 
+      // Save user
       await user.save();
 
-      // Don't send password back
-      const userObject = user.toObject();
-      delete userObject.password;
+      // Create token
+      const token = jwt.sign(
+        { userId: user._id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
 
-      res.status(201).json(userObject);
+      // Return user data and token
+      const userData = {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      };
+
+      res.status(201).json({ token, user: userData });
     } catch (error) {
-      res.status(400).json({ message: error.message });
+      console.error('Registration error:', error);
+      res.status(500).json({ message: 'Server error during registration' });
     }
   },
 
-  // Get current user
-  getMe: async (req, res) => {
+  getProfile: async (req, res) => {
     try {
       const user = await Auth.findById(req.user.userId).select('-password');
       if (!user) {
@@ -112,608 +93,166 @@ const authController = {
       }
       res.json(user);
     } catch (error) {
-      console.error('Error getting current user:', error);
-      res.status(500).json({ message: 'Server error' });
+      console.error('Get profile error:', error);
+      res.status(500).json({ message: 'Server error while fetching profile' });
     }
   },
 
-  // Update current user
-  updateUser: async (req, res) => {
-    try {
-      const { name, email, currentPassword, newPassword } = req.body;
-      const user = await Auth.findById(req.user._id);
-
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Update basic info
-      if (name) user.name = name;
-      if (email) user.email = email;
-
-      // Update password if provided
-      if (currentPassword && newPassword) {
-        const isMatch = await user.comparePassword(currentPassword);
-        if (!isMatch) {
-          return res
-            .status(400)
-            .json({ message: "Current password is incorrect" });
-        }
-        user.password = newPassword;
-      }
-
-      await user.save();
-
-      // Don't send password back
-      const userObject = user.toObject();
-      delete userObject.password;
-
-      res.json(userObject);
-    } catch (error) {
-      res.status(400).json({ message: error.message });
-    }
-  },
-
-  // Get all users (admin only)
-  getUsers: async (req, res) => {
-    try {
-      const users = await Auth.find({ role: 'user' }).select('-password');
-      
-      // Get contact counts for each user
-      const usersWithCounts = await Promise.all(
-        users.map(async (user) => {
-          const assignedContacts = await Contact.countDocuments({ assignedTo: user._id });
-          return {
-            ...user.toObject(),
-            assignedContacts
-          };
-        })
-      );
-      
-      res.json(usersWithCounts);
-    } catch (error) {
-      console.error('Error getting users:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  },
-
-  // Delete user (admin only)
-  deleteUser: async (req, res) => {
-    try {
-      const user = await Auth.findByIdAndDelete(req.params.userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      res.json({ message: "User deleted successfully" });
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  },
-
-  // Get user stats
-  getUserStats: async (req, res) => {
-    try {
-      const user = await Auth.findById(req.params.userId).select("stats").lean();
-
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      res.json(user.stats);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  },
-
-  // Login
-  loginAlt: async (req, res) => {
-    try {
-      const { email, password } = req.body;
-
-      const user = await Auth.findOne({ email });
-      if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      if (password !== user.password) {
-        // In production, use proper password hashing
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      const token = jwt.sign(
-        { userId: user._id, role: user.role },
-        process.env.JWT_SECRET || "your-secret-key",
-        { expiresIn: "24h" }
-      );
-
-      res.json({
-        token,
-        user: {
-          id: user._id,
-          email: user.email,
-          role: user.role,
-          name: user.name,
-        },
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Failed to login" });
-    }
-  },
-
-  // Create user (admin only)
-  createUser: async (req, res) => {
-    try {
-      const { email, password, name } = req.body;
-
-      const existingUser = await Auth.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-
-      const user = new Auth({
-        email,
-        password, // In production, hash the password
-        role: "user",
-        name,
-      });
-
-      await user.save();
-
-      res.status(201).json({
-        user: {
-          id: user._id,
-          email: user.email,
-          role: user.role,
-          name: user.name,
-        },
-      });
-    } catch (error) {
-      console.error("Create user error:", error);
-      res.status(500).json({ message: "Failed to create user" });
-    }
-  },
-
-  // Get all users with statistics (admin only)
-  getAllUsersWithStats: async (req, res) => {
-    try {
-      const users = await Auth.find({ role: "user" }).select("-password").lean();
-
-      // Get statistics for each user
-      const usersWithStats = await Promise.all(
-        users.map(async (user) => {
-          const stats = await getUserStatistics(user._id);
-          return {
-            ...user,
-            statistics: stats,
-          };
-        })
-      );
-
-      res.json(usersWithStats);
-    } catch (error) {
-      console.error("Get all users error:", error);
-      res.status(500).json({ message: "Failed to fetch users" });
-    }
-  },
-
-  // Get user details (admin only)
-  getUserDetails: async (req, res) => {
-    try {
-      const userId = req.user._id;
-      const user = await Auth.findById(userId).select("-password");
-
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      // Get user statistics
-      const statistics = await getUserStatistics(userId);
-
-      res.json({
-        user,
-        statistics,
-      });
-    } catch (error) {
-      console.error("Get user details error:", error);
-      res.status(500).json({ message: "Failed to fetch user details" });
-    }
-  },
-
-  // Get user profile
-  getUserProfile: async (req, res) => {
-    try {
-      const user = await Auth.findById(req.user.userId)
-        .select("-password")
-        .lean();
-      const stats = await getUserStatistics(req.user.userId);
-      const assignedContacts = await Auth.find({ assignedTo: req.user.userId })
-        .select("name pmNo enrollmentNo")
-        .lean();
-
-      res.json({
-        ...user,
-        statistics: stats,
-        assignedContacts,
-      });
-    } catch (error) {
-      console.error("Get user profile error:", error);
-      res.status(500).json({ message: "Failed to fetch user profile" });
-    }
-  },
-
-  // Assign contacts to user
-  assignContacts: async (req, res) => {
-    try {
-      const { contactIds, userId } = req.body;
-      console.log('Received request:', { contactIds, userId });
-
-      if (!contactIds || !Array.isArray(contactIds) || !userId) {
-        return res.status(400).json({ message: "Contact IDs must be an array and User ID is required" });
-      }
-
-      // First verify that all contactIds exist in users_data
-      const validContacts = await User.find({ _id: { $in: contactIds } }).select('_id');
-      const validContactIds = validContacts.map(c => c._id);
-
-      if (validContactIds.length !== contactIds.length) {
-        return res.status(400).json({ message: "Some contact IDs are invalid" });
-      }
-
-      // Update the auth user's assignedContacts field
-      const authUser = await Auth.findByIdAndUpdate(
-        userId,
-        { 
-          $addToSet: { 
-            assignedContacts: { $each: validContactIds }
-          },
-          'stats.lastAssignment': new Date()
-        },
-        { new: true }
-      ).populate('assignedContacts');
-
-      if (!authUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-
-      console.log('Updated auth user:', authUser);
-
-      // Update the assigned status in users_data collection
-      const updateResult = await User.updateMany(
-        { _id: { $in: validContactIds } },
-        { 
-          $set: { 
-            assignedTo: userId,
-            assignedAt: new Date(),
-            isAssigned: true
-          } 
-        }
-      );
-
-      console.log('Update result:', updateResult);
-
-      res.json({ 
-        message: "Users data assigned successfully",
-        assignedContacts: authUser.assignedContacts,
-        user: {
-          _id: authUser._id,
-          name: authUser.name,
-          email: authUser.email,
-          assignedContactsCount: authUser.assignedContacts.length
-        }
-      });
-    } catch (error) {
-      console.error("Assign contacts error details:", {
-        error: error.message,
-        stack: error.stack,
-        contactIds: req.body.contactIds,
-        userId: req.body.userId
-      });
-      res.status(500).json({ 
-        message: "Failed to assign contacts",
-        error: error.message 
-      });
-    }
-  },
-
-  // Unassign contacts from user
-  unassignContacts: async (req, res) => {
-    try {
-      const { userId, contactIds } = req.body;
-
-      // Update contacts to remove assignment
-      await Contact.updateMany(
-        { _id: { $in: contactIds } },
-        {
-          assignedTo: null,
-          assignmentDate: null,
-          status: 'unassigned'
-        }
-      );
-
-      // Remove contacts from user's assignedContacts array
-      await Auth.findByIdAndUpdate(userId, {
-        $pullAll: { assignedContacts: contactIds }
-      });
-
-      // Get updated assigned contacts count
-      const updatedUser = await Auth.findById(userId).select('assignedContacts');
-      const assignedContactsCount = updatedUser.assignedContacts.length;
-
-      res.json({
-        message: 'Contacts unassigned successfully',
-        unassignedCount: contactIds.length,
-        totalAssigned: assignedContactsCount
-      });
-    } catch (error) {
-      console.error('Unassignment error:', error);
-      res.status(500).json({ message: 'Failed to unassign contacts' });
-    }
-  },
-
-  // Get user's assigned contacts
-  getUserContacts: async (req, res) => {
-    try {
-      const { userId } = req.params;
-      
-      // Find user and populate assigned contacts
-      const user = await Auth.findById(userId)
-        .select('assignedContacts')
-        .populate('assignedContacts');
-
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      res.json(user.assignedContacts);
-    } catch (error) {
-      console.error('Get user contacts error:', error);
-      res.status(500).json({ message: 'Failed to fetch contacts' });
-    }
-  },
-
-  // Get current user's contacts
-  getCurrentUserContacts: async (req, res) => {
-    try {
-      const userId = req.user._id;
-      
-      // Find user and populate assigned contacts
-      const user = await Auth.findById(userId)
-        .select('assignedContacts')
-        .populate('assignedContacts');
-
-      res.json(user.assignedContacts);
-    } catch (error) {
-      console.error('Get current user contacts error:', error);
-      res.status(500).json({ message: 'Failed to fetch contacts' });
-    }
-  },
-
-  // Get user statistics
-  getUserStatsAlt: async (req, res) => {
-    try {
-      const userId = req.params.userId;
-      const stats = await getUserStatistics(userId);
-      res.json(stats);
-    } catch (error) {
-      console.error("Get user statistics error:", error);
-      res.status(500).json({ message: "Failed to fetch user statistics" });
-    }
-  },
-
-  // Get assigned contacts
   getAssignedContacts: async (req, res) => {
     try {
-      const contacts = await Auth.find({ assignedTo: req.user.userId })
-        .populate("assignedTo", "name email")
-        .lean();
+      const userId = req.user.userId;
+      console.log('Fetching assigned contacts for user:', userId);
 
-      res.json(contacts);
-    } catch (error) {
-      console.error("Get assigned contacts error:", error);
-      res.status(500).json({ message: "Failed to fetch assigned contacts" });
-    }
-  },
-
-  // Get user by ID (admin only)
-  getUserById: async (req, res) => {
-    try {
-      const userId = req.params.userId;
-      const user = await Auth.findById(userId)
-        .select('-password')
-        .lean();
-
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      // Get user statistics
-      const stats = {
-        assignedContacts: 0,
-        totalCalls: 0,
-        uniqueContactsCalled: 0,
-        lastActive: user.stats?.lastActive || null,
-        ...user.stats
-      };
-
-      res.json({
-        ...user,
-        statistics: stats
-      });
-    } catch (error) {
-      console.error('Get user by ID error:', error);
-      res.status(500).json({ message: 'Failed to fetch user details' });
-    }
-  },
-
-  // Register new user
-  registerNew: async (req, res) => {
-    try {
-      const { name, email, password, role = 'user' } = req.body;
-
-      // Check if user already exists
-      const existingUser = await Auth.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ message: 'User already exists' });
-      }
-
-      // Hash password
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(password, salt);
-
-      // Create new user
-      const user = new Auth({
-        name,
-        email,
-        password: hashedPassword,
-        role
-      });
-
-      await user.save();
-      res.status(201).json({ message: 'User created successfully' });
-    } catch (error) {
-      console.error('Error in register:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  },
-
-  // Login user
-  loginNew: async (req, res) => {
-    try {
-      const { email, password } = req.body;
-
-      // Check if user exists
-      const user = await Auth.findOne({ email });
-      if (!user) {
-        return res.status(400).json({ message: 'Invalid credentials' });
-      }
-
-      // Check password
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(400).json({ message: 'Invalid credentials' });
-      }
-
-      // Create JWT token
-      const token = jwt.sign(
-        { userId: user._id, role: user.role },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '1d' }
-      );
-
-      res.json({
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      });
-    } catch (error) {
-      console.error('Error in login:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  },
-
-  // Get all users (admin only)
-  getUsersNew: async (req, res) => {
-    try {
-      const users = await Auth.find({ role: 'user' }).select('-password');
-      
-      // Get contact counts for each user
-      const usersWithCounts = await Promise.all(
-        users.map(async (user) => {
-          const assignedContacts = await Contact.countDocuments({ assignedTo: user._id });
-          return {
-            ...user.toObject(),
-            assignedContacts
-          };
-        })
-      );
-      
-      res.json(usersWithCounts);
-    } catch (error) {
-      console.error('Error getting users:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  },
-
-  // Assign contacts to user
-  assignContactsNew: async (req, res) => {
-    try {
-      const { userId, contactIds } = req.body;
-
-      // Validate user exists
+      // Get user with assigned contacts
       const user = await Auth.findById(userId);
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Update all selected contacts
-      await Contact.updateMany(
-        { _id: { $in: contactIds } },
-        { $set: { assignedTo: userId } }
-      );
+      console.log('Found user with assigned contacts:', user.assignedContacts);
 
-      res.json({ message: 'Contacts assigned successfully' });
+      // Fetch the actual contact data from users_data collection
+      const contacts = await User.find({
+        _id: { $in: user.assignedContacts }
+      }).select('name pm_no enrollment_no phone_no_1 phone_no_2 phone_no_3 phone_no_4 address phoneStatuses');
+
+      console.log('Found contacts:', contacts.length);
+
+      // Format the response
+      const formattedContacts = contacts.map(contact => ({
+        _id: contact._id,
+        name: contact.name,
+        'pm no': contact.pm_no,
+        'enrollment no': contact.enrollment_no,
+        'phone no 1': contact.phone_no_1,
+        'phone no 2': contact.phone_no_2,
+        'phone no 3': contact.phone_no_3,
+        'phone no 4': contact.phone_no_4,
+        address: contact.address,
+        phoneStatuses: contact.phoneStatuses || []
+      }));
+
+      res.json({ contacts: formattedContacts });
     } catch (error) {
-      console.error('Error assigning contacts:', error);
-      res.status(500).json({ message: 'Failed to assign contacts' });
+      console.error('Error getting assigned contacts:', error);
+      res.status(500).json({ message: 'Failed to get assigned contacts', error: error.message });
     }
   },
 
-  // Get all users (admin only)
+  updateCallStatus: async (req, res) => {
+    try {
+      const { contactId, phoneNumber, called } = req.body;
+      const userId = req.user.userId;
+
+      // First check if the contact is assigned to this user
+      const user = await Auth.findById(userId);
+      if (!user || !user.assignedContacts.includes(contactId)) {
+        return res.status(403).json({ message: 'Not authorized to update this contact' });
+      }
+
+      // Update the contact's phone status
+      const contact = await User.findById(contactId);
+      if (!contact) {
+        return res.status(404).json({ message: 'Contact not found' });
+      }
+
+      // Initialize phoneStatuses if it doesn't exist
+      if (!contact.phoneStatuses) {
+        contact.phoneStatuses = [];
+      }
+
+      // Find or create the status for this phone number
+      const existingStatusIndex = contact.phoneStatuses.findIndex(
+        status => status.number === phoneNumber
+      );
+
+      if (existingStatusIndex >= 0) {
+        contact.phoneStatuses[existingStatusIndex] = {
+          ...contact.phoneStatuses[existingStatusIndex],
+          called: true,
+          lastUpdated: new Date()
+        };
+      } else {
+        contact.phoneStatuses.push({
+          number: phoneNumber,
+          called: true,
+          lastUpdated: new Date()
+        });
+      }
+
+      // Save the updated contact
+      await contact.save();
+
+      // Update user's stats
+      user.stats = user.stats || {};
+      user.stats.lastActive = new Date();
+      user.stats.totalCallsMade = (user.stats.totalCallsMade || 0) + 1;
+      await user.save();
+
+      res.json({ 
+        message: 'Call status updated successfully',
+        contact: {
+          _id: contact._id,
+          name: contact.name,
+          'pm no': contact.pm_no,
+          'enrollment no': contact.enrollment_no,
+          'phone no 1': contact.phone_no_1,
+          'phone no 2': contact.phone_no_2,
+          'phone no 3': contact.phone_no_3,
+          'phone no 4': contact.phone_no_4,
+          phoneStatuses: contact.phoneStatuses
+        }
+      });
+    } catch (error) {
+      console.error('Error updating call status:', error);
+      res.status(500).json({ message: 'Failed to update call status', error: error.message });
+    }
+  },
+
   getUsers: async (req, res) => {
     try {
-      const users = await Auth.find({ role: 'user' })
-        .select('name email role assignedContacts')
-        .lean();
-
+      const users = await Auth.find({ role: 'user' }).select('-password');
       res.json(users);
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Get users error:', error);
       res.status(500).json({ message: 'Failed to fetch users' });
     }
   },
-};
 
-// Helper function to get user statistics
-async function getUserStatistics(userId) {
-  try {
-    // Convert userId to ObjectId if it's a string
-    const userObjectId =
-      typeof userId === "string" ? new ObjectId(userId) : userId;
+  assignContacts: async (req, res) => {
+    try {
+      const { userId, contactIds } = req.body;
 
-    // Get assigned contacts count
-    const assignedContacts = await Auth.countDocuments({
-      assignedTo: userObjectId,
-      isAssigned: true,
-    });
+      // Verify user exists and is a regular user
+      const user = await Auth.findById(userId);
+      if (!user || user.role !== 'user') {
+        return res.status(400).json({ message: 'Invalid user' });
+      }
 
-    // Get total calls made by counting phoneStatuses where called is true
-    const contacts = await Auth.find({
-      assignedTo: userObjectId,
-      isAssigned: true,
-      phoneStatuses: { $exists: true, $ne: [] },
-    });
+      // Update user's assigned contacts
+      user.assignedContacts = contactIds;
+      user.stats = user.stats || {};
+      user.stats.lastAssignment = new Date();
+      await user.save();
 
-    let totalCallsMade = contacts.reduce((total, contact) => {
-      return (
-        total +
-        (contact.phoneStatuses?.filter((status) => status.called)?.length || 0)
+      // Update contacts' assigned status
+      await User.updateMany(
+        { _id: { $in: contactIds } },
+        { 
+          $set: { 
+            assignedTo: userId,
+            isAssigned: true,
+            assignedAt: new Date()
+          }
+        }
       );
-    }, 0);
 
-    return {
-      assignedContacts,
-      totalCallsMade,
-    };
-  } catch (error) {
-    console.error("Error getting user statistics:", error);
-    throw error;
-  }
-}
+      res.json({ message: 'Contacts assigned successfully', user });
+    } catch (error) {
+      console.error('Assign contacts error:', error);
+      res.status(500).json({ message: 'Failed to assign contacts' });
+    }
+  },
+};
 
 module.exports = authController;

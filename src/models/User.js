@@ -2,6 +2,18 @@ const mongoose = require('mongoose');
 
 console.log('Initializing User Schema...');
 
+const phoneStatusSchema = new mongoose.Schema({
+  number: String,
+  called: {
+    type: Boolean,
+    default: false
+  },
+  lastUpdated: {
+    type: Date,
+    default: Date.now
+  }
+});
+
 const userSchema = new mongoose.Schema({
   'sl no': {
     type: Number,
@@ -39,18 +51,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
-  phoneStatuses: [{
-    number: String,
-    called: {
-      type: Boolean,
-      default: false
-    },
-    calledBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Auth'
-    },
-    calledAt: Date
-  }],
+  phoneStatuses: [phoneStatusSchema],
   assignedTo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Auth',

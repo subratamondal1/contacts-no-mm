@@ -2,43 +2,60 @@ const mongoose = require("mongoose");
 
 const contactSchema = new mongoose.Schema(
   {
+    'sl no': {
+      type: Number,
+      required: true
+    },
+    'pm no': {
+      type: String,
+      required: true
+    },
+    'enrollment no': {
+      type: String,
+      required: true
+    },
     name: {
       type: String,
-      required: true,
+      required: true
     },
-    email: {
-      type: String,
-      required: true,
-    },
-    phone: {
-      type: String,
-      required: true,
-    },
+    'phone no 1': String,
+    'phone no 2': String,
+    'phone no 3': String,
+    'phone no 4': String,
+    address: String,
+    // Additional fields for tracking
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Auth",
-      default: null,
-    },
-    status: {
-      type: String,
-      enum: ['unassigned', 'assigned', 'contacted'],
-      default: 'unassigned'
-    },
-    assignmentDate: {
-      type: Date,
+      ref: "User",
       default: null
-    }
+    },
+    isAssigned: {
+      type: Boolean,
+      default: false
+    },
+    phoneStatuses: [{
+      number: String,
+      called: {
+        type: Boolean,
+        default: false
+      },
+      lastCalled: Date,
+      calledBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+      }
+    }]
   },
   {
     timestamps: true,
+    collection: 'users_data' // Explicitly set the collection name
   }
 );
 
-// Update status when assigned
+// Update isAssigned when assignedTo changes
 contactSchema.pre('save', function(next) {
   if (this.isModified('assignedTo')) {
-    this.status = this.assignedTo ? 'assigned' : 'unassigned';
-    this.assignmentDate = this.assignedTo ? new Date() : null;
+    this.isAssigned = !!this.assignedTo;
   }
   next();
 });

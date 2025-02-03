@@ -245,10 +245,26 @@ const userController = {
         return res.status(400).json({ message: 'Contact IDs and User ID are required' });
       }
 
+      // Validate user exists in Auth model
+      const Auth = mongoose.model('Auth');
+      const user = await Auth.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
       const UsersData = mongoose.model('users_data', Contact.schema);
       
-      // Update contacts
+      // First, unassign these contacts from any previous assignments
       await UsersData.updateMany(
+        { _id: { $in: contactIds } },
+        { 
+          $unset: { assignedTo: '', assignedAt: '' },
+          $set: { isAssigned: false }
+        }
+      );
+
+      // Then assign them to the new user
+      const result = await UsersData.updateMany(
         { _id: { $in: contactIds } },
         { 
           $set: { 
@@ -259,7 +275,29 @@ const userController = {
         }
       );
 
-      res.json({ message: 'Contacts assigned successfully' });
+      // Update the user's assignedContacts array
+      await Auth.findByIdAndUpdate(userId, {
+        $addToSet: { assignedContacts: { $each: contactIds } },
+        'stats.lastAssignment': new Date()
+      });
+
+      // Get the updated contacts to verify the assignment
+      const updatedContacts = await UsersData.find({ _id: { $in: contactIds } });
+      const successfullyAssigned = updatedContacts.filter(contact => 
+        contact.assignedTo && contact.assignedTo.toString() === userId
+      );
+
+      if (successfullyAssigned.length === 0) {
+        return res.status(400).json({ 
+          message: 'Failed to assign contacts. Please try again.' 
+        });
+      }
+
+      res.json({ 
+        message: 'Contacts assigned successfully',
+        assigned: successfullyAssigned.length,
+        total: contactIds.length
+      });
     } catch (error) {
       console.error('Error in assignContacts:', error);
       res.status(500).json({ 
@@ -301,7 +339,8 @@ const userController = {
   // Get all users
   getUsers: async (req, res) => {
     try {
-      const users = await User.find({ role: { $in: ['user', 'admin'] } })
+      const Auth = mongoose.model('Auth');
+      const users = await Auth.find({ role: { $in: ['user', 'admin'] } })
         .select('_id name email role')
         .sort({ name: 1 })
         .lean();

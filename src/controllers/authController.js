@@ -1,6 +1,7 @@
 const Auth = require('../models/Auth');
-const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 
 // Login
 exports.login = async (req, res) => {
@@ -32,7 +33,8 @@ exports.login = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Login error:', error);
+    res.status(500).json({ message: 'Failed to login' });
   }
 };
 
@@ -64,60 +66,89 @@ exports.createUser = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Create user error:', error);
+    res.status(500).json({ message: 'Failed to create user' });
   }
 };
 
-// Get all users with their contact statistics (admin only)
+// Get all users with statistics (admin only)
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await Auth.find({ role: 'user' })
-      .select('-password')
-      .lean();
+    const users = await Auth.find({ role: 'user' }).select('-password').lean();
 
     // Get statistics for each user
     const usersWithStats = await Promise.all(users.map(async (user) => {
-      const assignedContacts = await User.countDocuments({ assignedTo: user._id });
-      const calledNumbers = await User.aggregate([
-        {
-          $match: {
-            'phoneStatuses.calledBy': user._id
-          }
-        },
-        {
-          $project: {
-            calledCount: {
-              $size: {
-                $filter: {
-                  input: '$phoneStatuses',
-                  as: 'status',
-                  cond: {
-                    $and: [
-                      { $eq: ['$$status.called', true] },
-                      { $eq: ['$$status.calledBy', user._id] }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        }
-      ]);
-
-      const totalCalls = calledNumbers.reduce((sum, doc) => sum + doc.calledCount, 0);
-
+      const stats = await getUserStatistics(user._id);
       return {
         ...user,
-        statistics: {
-          assignedContacts,
-          totalCalls
-        }
+        statistics: stats
       };
     }));
 
     res.json(usersWithStats);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get all users error:', error);
+    res.status(500).json({ message: 'Failed to fetch users' });
+  }
+};
+
+// Get user details (admin only)
+exports.getUserDetails = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await Auth.findById(userId).select('-password').lean();
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const stats = await getUserStatistics(userId);
+    const assignedContacts = await User.find({ assignedTo: userId })
+      .select('name pmNo enrollmentNo phoneNumbers phoneStatuses')
+      .lean();
+
+    const transformedContacts = assignedContacts.map(contact => ({
+      _id: contact._id,
+      name: contact.name,
+      pmNo: contact['pm no'],
+      enrollmentNo: contact['enrollment no'],
+      phoneNumbers: [
+        { type: 'Phone 1', number: contact['phone no 1'] },
+        { type: 'Phone 2', number: contact['phone no 2'] },
+        { type: 'Phone 3', number: contact['phone no 3'] },
+        { type: 'Phone 4', number: contact['phone no 4'] }
+      ].filter(phone => phone.number),
+      phoneStatuses: contact.phoneStatuses || []
+    }));
+
+    res.json({
+      ...user,
+      statistics: stats,
+      assignedContacts: transformedContacts
+    });
+  } catch (error) {
+    console.error('Get user details error:', error);
+    res.status(500).json({ message: 'Failed to fetch user details' });
+  }
+};
+
+// Get user profile
+exports.getUserProfile = async (req, res) => {
+  try {
+    const user = await Auth.findById(req.user.userId).select('-password').lean();
+    const stats = await getUserStatistics(req.user.userId);
+    const assignedContacts = await User.find({ assignedTo: req.user.userId })
+      .select('name pmNo enrollmentNo')
+      .lean();
+
+    res.json({
+      ...user,
+      statistics: stats,
+      assignedContacts
+    });
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({ message: 'Failed to fetch user profile' });
   }
 };
 
@@ -126,21 +157,39 @@ exports.assignContacts = async (req, res) => {
   try {
     const { userId, contactIds } = req.body;
 
+    // Validate userId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid user ID' });
+    }
+
+    // Validate contactIds
+    const validContactIds = contactIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validContactIds.length !== contactIds.length) {
+      return res.status(400).json({ message: 'Invalid contact IDs' });
+    }
+
+    // Check if user exists
+    const user = await Auth.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
     // Check if contacts are already assigned
     const alreadyAssigned = await User.findOne({
-      _id: { $in: contactIds },
-      isAssigned: true
+      _id: { $in: validContactIds },
+      isAssigned: true,
+      assignedTo: { $ne: userId }
     });
 
     if (alreadyAssigned) {
       return res.status(400).json({
-        message: 'Some contacts are already assigned to users'
+        message: 'Some contacts are already assigned to other users'
       });
     }
 
-    // Update contacts to be assigned to this user
+    // Update contacts
     await User.updateMany(
-      { _id: { $in: contactIds } },
+      { _id: { $in: validContactIds } },
       {
         $set: {
           assignedTo: userId,
@@ -152,7 +201,8 @@ exports.assignContacts = async (req, res) => {
 
     res.json({ message: 'Contacts assigned successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Assign contacts error:', error);
+    res.status(500).json({ message: 'Failed to assign contacts' });
   }
 };
 
@@ -161,8 +211,14 @@ exports.unassignContacts = async (req, res) => {
   try {
     const { contactIds } = req.body;
 
+    // Validate contactIds
+    const validContactIds = contactIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (validContactIds.length !== contactIds.length) {
+      return res.status(400).json({ message: 'Invalid contact IDs' });
+    }
+
     await User.updateMany(
-      { _id: { $in: contactIds } },
+      { _id: { $in: validContactIds } },
       {
         $set: {
           assignedTo: null,
@@ -174,7 +230,8 @@ exports.unassignContacts = async (req, res) => {
 
     res.json({ message: 'Contacts unassigned successfully' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Unassign contacts error:', error);
+    res.status(500).json({ message: 'Failed to unassign contacts' });
   }
 };
 
@@ -182,8 +239,34 @@ exports.unassignContacts = async (req, res) => {
 exports.getUserStats = async (req, res) => {
   try {
     const userId = req.params.userId;
-    
-    const assignedContacts = await User.countDocuments({ assignedTo: userId });
+    const stats = await getUserStatistics(userId);
+    res.json(stats);
+  } catch (error) {
+    console.error('Get user statistics error:', error);
+    res.status(500).json({ message: 'Failed to fetch user statistics' });
+  }
+};
+
+// Get assigned contacts
+exports.getAssignedContacts = async (req, res) => {
+  try {
+    const contacts = await User.find({ assignedTo: req.user.userId })
+      .populate('assignedTo', 'name email')
+      .lean();
+
+    res.json(contacts);
+  } catch (error) {
+    console.error('Get assigned contacts error:', error);
+    res.status(500).json({ message: 'Failed to fetch assigned contacts' });
+  }
+};
+
+// Helper function to get user statistics
+async function getUserStatistics(userId) {
+  try {
+    const assignedContacts = await User.countDocuments({ 
+      assignedTo: mongoose.Types.ObjectId(userId) 
+    });
     
     const callStats = await User.aggregate([
       {
@@ -216,43 +299,17 @@ exports.getUserStats = async (req, res) => {
       }
     ]);
 
-    const stats = {
+    return {
       assignedContacts,
       totalCalls: callStats[0]?.totalCalls || 0,
       uniqueContactsCalled: callStats[0]?.uniqueContacts?.length || 0
     };
-
-    res.json(stats);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Get user statistics error:', error);
+    return {
+      assignedContacts: 0,
+      totalCalls: 0,
+      uniqueContactsCalled: 0
+    };
   }
-};
-
-// Get assigned contacts (for users)
-exports.getAssignedContacts = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-
-    const [contacts, total] = await Promise.all([
-      User.find({ assignedTo: userId })
-        .sort({ 'sl no': 1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean(),
-      User.countDocuments({ assignedTo: userId })
-    ]);
-
-    res.json({
-      contacts,
-      pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+}

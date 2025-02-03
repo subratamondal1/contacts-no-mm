@@ -6,14 +6,19 @@ const { authenticate, isAdmin } = require('../middleware/auth');
 // Public routes
 router.post('/login', authController.login);
 
-// Admin only routes
-router.post('/users', authenticate, isAdmin, authController.createUser);
-router.get('/users', authenticate, isAdmin, authController.getAllUsers);
-router.post('/assign-contacts', authenticate, isAdmin, authController.assignContacts);
-router.post('/unassign-contacts', authenticate, isAdmin, authController.unassignContacts);
+// Protected routes - require authentication
+router.use(authenticate);
 
-// User routes
-router.get('/assigned-contacts', authenticate, authController.getAssignedContacts);
-router.get('/stats/:userId', authenticate, authController.getUserStats);
+// Admin only routes
+router.post('/users', isAdmin, authController.createUser);
+router.get('/users', isAdmin, authController.getAllUsers);
+router.get('/users/:userId', isAdmin, authController.getUserDetails);
+router.post('/assign-contacts', isAdmin, authController.assignContacts);
+router.post('/unassign-contacts', isAdmin, authController.unassignContacts);
+
+// User routes - accessible by both admin and regular users
+router.get('/stats/:userId', authController.getUserStats);
+router.get('/assigned-contacts', authController.getAssignedContacts);
+router.get('/profile', authController.getUserProfile);
 
 module.exports = router;

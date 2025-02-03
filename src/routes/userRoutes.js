@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, isAdmin } = require('../middleware/auth');
 
 // Log all route access
 router.use((req, res, next) => {
@@ -31,8 +31,36 @@ router.get('/users/:id', async (req, res, next) => {
   }
 });
 
-// Get contacts with pagination and search
-router.get('/contacts', userController.getContacts);
+// Get all contacts (paginated)
+router.get('/contacts', authenticate, userController.getContacts);
+
+// Toggle call status for a contact
+router.post('/:id/toggle-call', authenticate, userController.togglePhoneCalled);
+
+// Get user statistics
+router.get('/:id/statistics', authenticate, async (req, res) => {
+  try {
+    const stats = await userController.getUserStatistics(req.params.id);
+    res.json(stats);
+  } catch (error) {
+    console.error('Error getting user statistics:', error);
+    res.status(500).json({ message: 'Failed to get user statistics' });
+  }
+});
+
+// Get assigned contacts for a user
+router.get('/:id/assigned-contacts', authenticate, async (req, res) => {
+  try {
+    const contacts = await userController.getAssignedContacts(req.params.id);
+    res.json(contacts);
+  } catch (error) {
+    console.error('Error getting assigned contacts:', error);
+    res.status(500).json({ message: 'Failed to get assigned contacts' });
+  }
+});
+
+// Get assigned contacts
+router.get('/assigned-contacts', authenticate, userController.getAssignedContacts);
 
 // Toggle called status
 router.put('/users/:id/toggle-called', async (req, res, next) => {
@@ -42,9 +70,6 @@ router.put('/users/:id/toggle-called', async (req, res, next) => {
     next(error);
   }
 });
-
-// Toggle call status for a contact
-router.put('/:id/toggle-call', userController.togglePhoneCalled);
 
 // Get statistics
 router.get('/stats', async (req, res, next) => {

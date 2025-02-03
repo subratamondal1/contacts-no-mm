@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
 const { ObjectId } = mongoose.Types;
 const Contact = require("../models/Contact");
+const User = require('../models/User');
 
 const authController = {
   // Login user
@@ -345,55 +346,74 @@ const authController = {
   // Assign contacts to user
   assignContacts: async (req, res) => {
     try {
-      const { userId, contactIds } = req.body;
+      const { contactIds, userId } = req.body;
+      console.log('Received request:', { contactIds, userId });
 
-      // Validate inputs
-      if (!userId || !contactIds || !Array.isArray(contactIds)) {
-        return res.status(400).json({ message: "Invalid input data" });
+      if (!contactIds || !Array.isArray(contactIds) || !userId) {
+        return res.status(400).json({ message: "Contact IDs must be an array and User ID is required" });
       }
 
-      // Find the user
-      const user = await Auth.findById(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      // First verify that all contactIds exist in users_data
+      const validContacts = await User.find({ _id: { $in: contactIds } }).select('_id');
+      const validContactIds = validContacts.map(c => c._id);
+
+      if (validContactIds.length !== contactIds.length) {
+        return res.status(400).json({ message: "Some contact IDs are invalid" });
       }
 
-      // Update the contacts
-      await Contact.updateMany(
-        { _id: { $in: contactIds } },
-        { 
-          $set: { 
-            assignedTo: userId,
-            assignmentDate: new Date(),
-            status: 'assigned'
-          }
-        }
-      );
-
-      // Update user's assignedContacts array
-      await Auth.findByIdAndUpdate(
+      // Update the auth user's assignedContacts field
+      const authUser = await Auth.findByIdAndUpdate(
         userId,
         { 
           $addToSet: { 
-            assignedContacts: { 
-              $each: contactIds 
-            } 
+            assignedContacts: { $each: validContactIds }
+          },
+          'stats.lastAssignment': new Date()
+        },
+        { new: true }
+      ).populate('assignedContacts');
+
+      if (!authUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      console.log('Updated auth user:', authUser);
+
+      // Update the assigned status in users_data collection
+      const updateResult = await User.updateMany(
+        { _id: { $in: validContactIds } },
+        { 
+          $set: { 
+            assignedTo: userId,
+            assignedAt: new Date(),
+            isAssigned: true
           } 
         }
       );
 
-      // Get updated user data with populated contacts
-      const updatedUser = await Auth.findById(userId)
-        .populate('assignedContacts')
-        .select('-password');
+      console.log('Update result:', updateResult);
 
-      res.json({
-        message: "Contacts assigned successfully",
-        user: updatedUser
+      res.json({ 
+        message: "Users data assigned successfully",
+        assignedContacts: authUser.assignedContacts,
+        user: {
+          _id: authUser._id,
+          name: authUser.name,
+          email: authUser.email,
+          assignedContactsCount: authUser.assignedContacts.length
+        }
       });
     } catch (error) {
-      console.error("Error in assignContacts:", error);
-      res.status(500).json({ message: "Error assigning contacts", error: error.message });
+      console.error("Assign contacts error details:", {
+        error: error.message,
+        stack: error.stack,
+        contactIds: req.body.contactIds,
+        userId: req.body.userId
+      });
+      res.status(500).json({ 
+        message: "Failed to assign contacts",
+        error: error.message 
+      });
     }
   },
 
@@ -642,7 +662,21 @@ const authController = {
       console.error('Error assigning contacts:', error);
       res.status(500).json({ message: 'Failed to assign contacts' });
     }
-  }
+  },
+
+  // Get all users (admin only)
+  getUsers: async (req, res) => {
+    try {
+      const users = await Auth.find({ role: 'user' })
+        .select('name email role assignedContacts')
+        .lean();
+
+      res.json(users);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      res.status(500).json({ message: 'Failed to fetch users' });
+    }
+  },
 };
 
 // Helper function to get user statistics

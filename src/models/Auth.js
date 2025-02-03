@@ -27,7 +27,7 @@ const authSchema = new mongoose.Schema(
     assignedContacts: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Contact",
+        ref: "users_data",
       },
     ],
     stats: {

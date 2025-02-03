@@ -23,6 +23,9 @@ router.get("/users", async (req, res, next) => {
   }
 });
 
+// Get application users
+router.get("/users", authenticate, authController.getUsers);
+
 // Get user by ID
 router.get("/users/:id", async (req, res, next) => {
   try {

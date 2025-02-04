@@ -9,14 +9,8 @@ router.use(authenticate);
 // Get all users data with pagination and search
 router.get("/users-data", userController.getUsersData);
 
-// Get contacts with pagination
+// Get contacts with pagination and filters
 router.get("/contacts", userController.getContacts);
-
-// Toggle phone called status
-router.put("/contacts/:id/toggle-called", userController.togglePhoneCalled);
-
-// Get statistics
-router.get("/stats", userController.getStatistics);
 
 // Get assigned contacts
 router.get("/assigned-contacts", userController.getAssignedContacts);
@@ -29,5 +23,11 @@ router.post("/unassign-contacts", userController.unassignContacts);
 
 // Get all users
 router.get("/users", userController.getUsers);
+
+// Toggle phone called status
+router.put("/contacts/:id/toggle-called", userController.togglePhoneCalled);
+
+// Get statistics
+router.get("/stats", userController.getStatistics);
 
 module.exports = router;

@@ -20,7 +20,8 @@ exports.authenticate = async (req, res, next) => {
     }
 
     req.user = {
-      userId: user._id,
+      _id: user._id,
+      userId: user._id, // Keep for backward compatibility
       role: user.role,
       name: user.name,
       email: user.email,

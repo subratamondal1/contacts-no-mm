@@ -24,17 +24,31 @@ const authSchema = new mongoose.Schema(
       enum: ["admin", "user"],
       default: "user",
     },
-    assignedContacts: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
-      },
-    ],
+    assignedContacts: {
+      type: [{
+        contact: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Contact"
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now
+        },
+        status: {
+          type: String,
+          enum: ['active', 'completed', 'removed'],
+          default: 'active'
+        }
+      }],
+      default: []
+    },
     stats: {
       lastActive: { type: Date },
       lastAssignment: { type: Date },
       totalCallsMade: { type: Number, default: 0 },
-      uniqueContactsCalled: { type: Number, default: 0 }
+      uniqueContactsCalled: { type: Number, default: 0 },
+      totalAssignedContacts: { type: Number, default: 0 },
+      activeAssignedContacts: { type: Number, default: 0 }
     }
   },
   {

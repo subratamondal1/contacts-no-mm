@@ -101,41 +101,57 @@ const authController = {
   getAssignedContacts: async (req, res) => {
     try {
       const userId = req.user.userId;
-      console.log('Fetching assigned contacts for user:', userId);
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
 
-      // Get user with assigned contacts
+      // Get user with their assigned contacts
       const user = await Auth.findById(userId);
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      console.log('Found user with assigned contacts:', user.assignedContacts);
+      // Get only active contacts
+      const activeAssignments = user.assignedContacts.filter(a => a.status === 'active');
+      const activeContactIds = activeAssignments.map(a => a.contact);
+
+      // Get total count
+      const total = activeContactIds.length;
+
+      // Get paginated contact IDs
+      const paginatedContactIds = activeContactIds.slice(skip, skip + limit);
 
       // Fetch the actual contact data from users_data collection
       const contacts = await User.find({
-        _id: { $in: user.assignedContacts }
+        _id: { $in: paginatedContactIds }
       }).select('name pm_no enrollment_no phone_no_1 phone_no_2 phone_no_3 phone_no_4 address phoneStatuses');
 
-      console.log('Found contacts:', contacts.length);
+      // Map contacts with their assignment data
+      const contactsWithAssignmentData = contacts.map(contact => {
+        const assignment = activeAssignments.find(a => a.contact.toString() === contact._id.toString());
+        return {
+          ...contact.toObject(),
+          assignedAt: assignment.assignedAt
+        };
+      });
 
-      // Format the response
-      const formattedContacts = contacts.map(contact => ({
-        _id: contact._id,
-        name: contact.name,
-        'pm no': contact.pm_no,
-        'enrollment no': contact.enrollment_no,
-        'phone no 1': contact.phone_no_1,
-        'phone no 2': contact.phone_no_2,
-        'phone no 3': contact.phone_no_3,
-        'phone no 4': contact.phone_no_4,
-        address: contact.address,
-        phoneStatuses: contact.phoneStatuses || []
-      }));
-
-      res.json({ contacts: formattedContacts });
+      res.json({
+        contacts: contactsWithAssignmentData,
+        pagination: {
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+          hasMore: page * limit < total,
+          pageSize: limit
+        },
+        stats: user.stats
+      });
     } catch (error) {
-      console.error('Error getting assigned contacts:', error);
-      res.status(500).json({ message: 'Failed to get assigned contacts', error: error.message });
+      console.error('Error in getAssignedContacts:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch assigned contacts',
+        error: error.message 
+      });
     }
   },
 
@@ -146,7 +162,7 @@ const authController = {
 
       // First check if the contact is assigned to this user
       const user = await Auth.findById(userId);
-      if (!user || !user.assignedContacts.includes(contactId)) {
+      if (!user || !user.assignedContacts.some(a => a.contact.toString() === contactId)) {
         return res.status(403).json({ message: 'Not authorized to update this contact' });
       }
 
@@ -229,10 +245,26 @@ const authController = {
         return res.status(400).json({ message: 'Invalid user' });
       }
 
-      // Update user's assigned contacts
-      user.assignedContacts = contactIds;
+      // Get current assigned contacts
+      const currentAssignments = user.assignedContacts || [];
+      
+      // Create new contact assignments
+      const newAssignments = contactIds.map(contactId => ({
+        contact: contactId,
+        assignedAt: new Date(),
+        status: 'active'
+      }));
+
+      // Combine existing and new assignments
+      const updatedAssignments = [...currentAssignments, ...newAssignments];
+
+      // Update user's assigned contacts and stats
+      user.assignedContacts = updatedAssignments;
       user.stats = user.stats || {};
       user.stats.lastAssignment = new Date();
+      user.stats.totalAssignedContacts = updatedAssignments.length;
+      user.stats.activeAssignedContacts = updatedAssignments.filter(a => a.status === 'active').length;
+
       await user.save();
 
       // Update contacts' assigned status
@@ -247,10 +279,14 @@ const authController = {
         }
       );
 
-      res.json({ message: 'Contacts assigned successfully', user });
+      res.json({ 
+        message: 'Contacts assigned successfully', 
+        totalAssigned: user.stats.totalAssignedContacts,
+        activeAssigned: user.stats.activeAssignedContacts
+      });
     } catch (error) {
       console.error('Assign contacts error:', error);
-      res.status(500).json({ message: 'Failed to assign contacts' });
+      res.status(500).json({ message: 'Failed to assign contacts', error: error.message });
     }
   },
 };

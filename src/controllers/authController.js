@@ -1,7 +1,7 @@
-const Auth = require('../models/Auth');
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const Auth = require("../models/Auth");
+const User = require("../models/User");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 const authController = {
   login: async (req, res) => {
@@ -11,20 +11,20 @@ const authController = {
       // Find user by email
       const user = await Auth.findOne({ email });
       if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       // Check password
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       // Create token
       const token = jwt.sign(
         { userId: user._id, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: "24h" }
       );
 
       // Return user data (excluding password) and token
@@ -32,13 +32,13 @@ const authController = {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
       };
 
       res.json({ token, user: userData });
     } catch (error) {
-      console.error('Login error:', error);
-      res.status(500).json({ message: 'Server error during login' });
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Server error during login" });
     }
   },
 
@@ -49,7 +49,7 @@ const authController = {
       // Check if user exists
       let user = await Auth.findOne({ email });
       if (user) {
-        return res.status(400).json({ message: 'User already exists' });
+        return res.status(400).json({ message: "User already exists" });
       }
 
       // Create new user
@@ -57,7 +57,7 @@ const authController = {
         name,
         email,
         password,
-        role: role || 'user'
+        role: role || "user",
       });
 
       // Save user
@@ -67,7 +67,7 @@ const authController = {
       const token = jwt.sign(
         { userId: user._id, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: "24h" }
       );
 
       // Return user data and token
@@ -75,26 +75,26 @@ const authController = {
         _id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
       };
 
       res.status(201).json({ token, user: userData });
     } catch (error) {
-      console.error('Registration error:', error);
-      res.status(500).json({ message: 'Server error during registration' });
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Server error during registration" });
     }
   },
 
   getProfile: async (req, res) => {
     try {
-      const user = await Auth.findById(req.user.userId).select('-password');
+      const user = await Auth.findById(req.user.userId).select("-password");
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
       res.json(user);
     } catch (error) {
-      console.error('Get profile error:', error);
-      res.status(500).json({ message: 'Server error while fetching profile' });
+      console.error("Get profile error:", error);
+      res.status(500).json({ message: "Server error while fetching profile" });
     }
   },
 
@@ -108,12 +108,14 @@ const authController = {
       // Get user with their assigned contacts
       const user = await Auth.findById(userId);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
 
       // Get only active contacts
-      const activeAssignments = user.assignedContacts.filter(a => a.status === 'active');
-      const activeContactIds = activeAssignments.map(a => a.contact);
+      const activeAssignments = user.assignedContacts.filter(
+        (a) => a.status === "active"
+      );
+      const activeContactIds = activeAssignments.map((a) => a.contact);
 
       // Get total count
       const total = activeContactIds.length;
@@ -123,15 +125,19 @@ const authController = {
 
       // Fetch the actual contact data from users_data collection
       const contacts = await User.find({
-        _id: { $in: paginatedContactIds }
-      }).select('name pm_no enrollment_no phone_no_1 phone_no_2 phone_no_3 phone_no_4 address phoneStatuses');
+        _id: { $in: paginatedContactIds },
+      }).select(
+        "name pm_no enrollment_no phone_no_1 phone_no_2 phone_no_3 phone_no_4 address phoneStatuses"
+      );
 
       // Map contacts with their assignment data
-      const contactsWithAssignmentData = contacts.map(contact => {
-        const assignment = activeAssignments.find(a => a.contact.toString() === contact._id.toString());
+      const contactsWithAssignmentData = contacts.map((contact) => {
+        const assignment = activeAssignments.find(
+          (a) => a.contact.toString() === contact._id.toString()
+        );
         return {
           ...contact.toObject(),
-          assignedAt: assignment.assignedAt
+          assignedAt: assignment.assignedAt,
         };
       });
 
@@ -142,15 +148,15 @@ const authController = {
           page,
           totalPages: Math.ceil(total / limit),
           hasMore: page * limit < total,
-          pageSize: limit
+          pageSize: limit,
         },
-        stats: user.stats
+        stats: user.stats,
       });
     } catch (error) {
-      console.error('Error in getAssignedContacts:', error);
-      res.status(500).json({ 
-        message: 'Failed to fetch assigned contacts',
-        error: error.message 
+      console.error("Error in getAssignedContacts:", error);
+      res.status(500).json({
+        message: "Failed to fetch assigned contacts",
+        error: error.message,
       });
     }
   },
@@ -162,14 +168,19 @@ const authController = {
 
       // First check if the contact is assigned to this user
       const user = await Auth.findById(userId);
-      if (!user || !user.assignedContacts.some(a => a.contact.toString() === contactId)) {
-        return res.status(403).json({ message: 'Not authorized to update this contact' });
+      if (
+        !user ||
+        !user.assignedContacts.some((a) => a.contact.toString() === contactId)
+      ) {
+        return res
+          .status(403)
+          .json({ message: "Not authorized to update this contact" });
       }
 
       // Update the contact's phone status
       const contact = await User.findById(contactId);
       if (!contact) {
-        return res.status(404).json({ message: 'Contact not found' });
+        return res.status(404).json({ message: "Contact not found" });
       }
 
       // Initialize phoneStatuses if it doesn't exist
@@ -179,20 +190,20 @@ const authController = {
 
       // Find or create the status for this phone number
       const existingStatusIndex = contact.phoneStatuses.findIndex(
-        status => status.number === phoneNumber
+        (status) => status.number === phoneNumber
       );
 
       if (existingStatusIndex >= 0) {
         contact.phoneStatuses[existingStatusIndex] = {
           ...contact.phoneStatuses[existingStatusIndex],
           called: true,
-          lastUpdated: new Date()
+          lastUpdated: new Date(),
         };
       } else {
         contact.phoneStatuses.push({
           number: phoneNumber,
           called: true,
-          lastUpdated: new Date()
+          lastUpdated: new Date(),
         });
       }
 
@@ -205,33 +216,38 @@ const authController = {
       user.stats.totalCallsMade = (user.stats.totalCallsMade || 0) + 1;
       await user.save();
 
-      res.json({ 
-        message: 'Call status updated successfully',
+      res.json({
+        message: "Call status updated successfully",
         contact: {
           _id: contact._id,
           name: contact.name,
-          'pm no': contact.pm_no,
-          'enrollment no': contact.enrollment_no,
-          'phone no 1': contact.phone_no_1,
-          'phone no 2': contact.phone_no_2,
-          'phone no 3': contact.phone_no_3,
-          'phone no 4': contact.phone_no_4,
-          phoneStatuses: contact.phoneStatuses
-        }
+          "pm no": contact.pm_no,
+          "enrollment no": contact.enrollment_no,
+          "phone no 1": contact.phone_no_1,
+          "phone no 2": contact.phone_no_2,
+          "phone no 3": contact.phone_no_3,
+          "phone no 4": contact.phone_no_4,
+          phoneStatuses: contact.phoneStatuses,
+        },
       });
     } catch (error) {
-      console.error('Error updating call status:', error);
-      res.status(500).json({ message: 'Failed to update call status', error: error.message });
+      console.error("Error updating call status:", error);
+      res
+        .status(500)
+        .json({
+          message: "Failed to update call status",
+          error: error.message,
+        });
     }
   },
 
   getUsers: async (req, res) => {
     try {
-      const users = await Auth.find({ role: 'user' }).select('-password');
+      const users = await Auth.find({ role: "user" }).select("-password");
       res.json(users);
     } catch (error) {
-      console.error('Get users error:', error);
-      res.status(500).json({ message: 'Failed to fetch users' });
+      console.error("Get users error:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
     }
   },
 
@@ -241,18 +257,18 @@ const authController = {
 
       // Verify user exists and is a regular user
       const user = await Auth.findById(userId);
-      if (!user || user.role !== 'user') {
-        return res.status(400).json({ message: 'Invalid user' });
+      if (!user || user.role !== "user") {
+        return res.status(400).json({ message: "Invalid user" });
       }
 
       // Get current assigned contacts
       const currentAssignments = user.assignedContacts || [];
-      
+
       // Create new contact assignments
-      const newAssignments = contactIds.map(contactId => ({
+      const newAssignments = contactIds.map((contactId) => ({
         contact: contactId,
         assignedAt: new Date(),
-        status: 'active'
+        status: "active",
       }));
 
       // Combine existing and new assignments
@@ -263,30 +279,34 @@ const authController = {
       user.stats = user.stats || {};
       user.stats.lastAssignment = new Date();
       user.stats.totalAssignedContacts = updatedAssignments.length;
-      user.stats.activeAssignedContacts = updatedAssignments.filter(a => a.status === 'active').length;
+      user.stats.activeAssignedContacts = updatedAssignments.filter(
+        (a) => a.status === "active"
+      ).length;
 
       await user.save();
 
       // Update contacts' assigned status
       await User.updateMany(
         { _id: { $in: contactIds } },
-        { 
-          $set: { 
+        {
+          $set: {
             assignedTo: userId,
             isAssigned: true,
-            assignedAt: new Date()
-          }
+            assignedAt: new Date(),
+          },
         }
       );
 
-      res.json({ 
-        message: 'Contacts assigned successfully', 
+      res.json({
+        message: "Contacts assigned successfully",
         totalAssigned: user.stats.totalAssignedContacts,
-        activeAssigned: user.stats.activeAssignedContacts
+        activeAssigned: user.stats.activeAssignedContacts,
       });
     } catch (error) {
-      console.error('Assign contacts error:', error);
-      res.status(500).json({ message: 'Failed to assign contacts', error: error.message });
+      console.error("Assign contacts error:", error);
+      res
+        .status(500)
+        .json({ message: "Failed to assign contacts", error: error.message });
     }
   },
 };

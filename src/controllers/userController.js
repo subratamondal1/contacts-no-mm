@@ -8,8 +8,8 @@ const userController = {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
-      const search = req.query.search || '';
-      const assignmentStatus = req.query.assignmentStatus || 'all';
+      const search = req.query.search || "";
+      const assignmentStatus = req.query.assignmentStatus || "all";
       const skip = (page - 1) * limit;
 
       // Build the search query
@@ -17,21 +17,21 @@ const userController = {
       if (search) {
         query = {
           $or: [
-            { name: { $regex: search, $options: 'i' } },
-            { 'pm no': { $regex: search, $options: 'i' } },
-            { 'enrollment no': { $regex: search, $options: 'i' } },
-            { 'phone no 1': { $regex: search, $options: 'i' } },
-            { 'phone no 2': { $regex: search, $options: 'i' } },
-            { 'phone no 3': { $regex: search, $options: 'i' } },
-            { 'phone no 4': { $regex: search, $options: 'i' } }
-          ]
+            { name: { $regex: search, $options: "i" } },
+            { "pm no": { $regex: search, $options: "i" } },
+            { "enrollment no": { $regex: search, $options: "i" } },
+            { "phone no 1": { $regex: search, $options: "i" } },
+            { "phone no 2": { $regex: search, $options: "i" } },
+            { "phone no 3": { $regex: search, $options: "i" } },
+            { "phone no 4": { $regex: search, $options: "i" } },
+          ],
         };
       }
 
       // Add assignment status filter
-      if (assignmentStatus === 'assigned') {
+      if (assignmentStatus === "assigned") {
         query.assignedTo = { $exists: true, $ne: null };
-      } else if (assignmentStatus === 'unassigned') {
+      } else if (assignmentStatus === "unassigned") {
         query.assignedTo = { $exists: false };
       }
 
@@ -41,50 +41,48 @@ const userController = {
         {
           $facet: {
             contacts: [
-              { $sort: { 'sl no': 1 } },
+              { $sort: { "sl no": 1 } },
               { $skip: skip },
               { $limit: limit },
               {
                 $lookup: {
-                  from: 'users',
-                  localField: 'assignedTo',
-                  foreignField: '_id',
-                  as: 'assignedToUser'
-                }
+                  from: "users",
+                  localField: "assignedTo",
+                  foreignField: "_id",
+                  as: "assignedToUser",
+                },
               },
               {
                 $addFields: {
-                  assignedToUser: { $arrayElemAt: ['$assignedToUser', 0] }
-                }
+                  assignedToUser: { $arrayElemAt: ["$assignedToUser", 0] },
+                },
               },
               {
                 $project: {
                   _id: 1,
                   name: 1,
-                  'pm no': 1,
-                  'enrollment no': 1,
-                  'phone no 1': 1,
-                  'phone no 2': 1,
-                  'phone no 3': 1,
-                  'phone no 4': 1,
+                  "pm no": 1,
+                  "enrollment no": 1,
+                  "phone no 1": 1,
+                  "phone no 2": 1,
+                  "phone no 3": 1,
+                  "phone no 4": 1,
                   assignedTo: 1,
                   phoneStatuses: 1,
-                  'assignedToUser.name': 1,
-                  'assignedToUser.email': 1
-                }
-              }
+                  "assignedToUser.name": 1,
+                  "assignedToUser.email": 1,
+                },
+              },
             ],
-            totalCount: [
-              { $count: 'count' }
-            ]
-          }
+            totalCount: [{ $count: "count" }],
+          },
         },
         {
           $project: {
             contacts: 1,
-            totalCount: { $arrayElemAt: ['$totalCount.count', 0] }
-          }
-        }
+            totalCount: { $arrayElemAt: ["$totalCount.count", 0] },
+          },
+        },
       ]);
 
       const totalPages = Math.ceil(totalCount / limit);
@@ -95,12 +93,12 @@ const userController = {
           total: totalCount,
           totalPages,
           currentPage: page,
-          limit
-        }
+          limit,
+        },
       });
     } catch (error) {
-      console.error('Error in getContacts:', error);
-      res.status(500).json({ message: 'Error fetching contacts' });
+      console.error("Error in getContacts:", error);
+      res.status(500).json({ message: "Error fetching contacts" });
     }
   },
 
@@ -210,40 +208,40 @@ const userController = {
     try {
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 50;
-      const search = req.query.search || '';
+      const search = req.query.search || "";
       const userId = req.user._id || req.user.userId; // Handle both cases
 
-      console.log('Debug - Request info:', {
+      console.log("Debug - Request info:", {
         page,
         limit,
         search,
         userId,
-        user: req.user
+        user: req.user,
       });
 
       if (!userId) {
-        console.error('No user ID found in request');
-        return res.status(401).json({ message: 'User ID not found' });
+        console.error("No user ID found in request");
+        return res.status(401).json({ message: "User ID not found" });
       }
 
-      const UsersData = mongoose.model('users_data', Contact.schema);
-      const Auth = mongoose.model('Auth');
-      
+      const UsersData = mongoose.model("users_data", Contact.schema);
+      const Auth = mongoose.model("Auth");
+
       // First get the user to check their assigned contacts
-      const user = await Auth.findById(userId).select('assignedContacts');
-      
-      console.log('Debug - User found:', {
+      const user = await Auth.findById(userId).select("assignedContacts");
+
+      console.log("Debug - User found:", {
         userId,
         hasUser: !!user,
-        assignedContactsCount: user?.assignedContacts?.length || 0
+        assignedContactsCount: user?.assignedContacts?.length || 0,
       });
 
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
 
       if (!user.assignedContacts) {
-        console.log('Debug - No assigned contacts array');
+        console.log("Debug - No assigned contacts array");
         return res.json({
           contacts: [],
           pagination: {
@@ -251,37 +249,37 @@ const userController = {
             page,
             totalPages: 0,
             hasMore: false,
-            pageSize: limit
-          }
+            pageSize: limit,
+          },
         });
       }
 
       // Get active contact IDs from user's assigned contacts
       const activeContactIds = (user.assignedContacts || [])
-        .filter(assignment => {
-          const isActive = assignment && assignment.status === 'active';
+        .filter((assignment) => {
+          const isActive = assignment && assignment.status === "active";
           if (!isActive) {
-            console.log('Debug - Inactive assignment:', assignment);
+            console.log("Debug - Inactive assignment:", assignment);
           }
           return isActive;
         })
-        .map(assignment => {
+        .map((assignment) => {
           if (!assignment.contact) {
-            console.log('Debug - Invalid assignment:', assignment);
+            console.log("Debug - Invalid assignment:", assignment);
             return null;
           }
           try {
             return new mongoose.Types.ObjectId(assignment.contact);
           } catch (err) {
-            console.error('Invalid contact ID:', assignment.contact);
+            console.error("Invalid contact ID:", assignment.contact);
             return null;
           }
         })
-        .filter(id => id !== null);
+        .filter((id) => id !== null);
 
-      console.log('Debug - Active contacts:', {
+      console.log("Debug - Active contacts:", {
         totalAssignments: user.assignedContacts.length,
-        activeCount: activeContactIds.length
+        activeCount: activeContactIds.length,
       });
 
       if (activeContactIds.length === 0) {
@@ -292,8 +290,8 @@ const userController = {
             page,
             totalPages: 0,
             hasMore: false,
-            pageSize: limit
-          }
+            pageSize: limit,
+          },
         });
       }
 
@@ -301,88 +299,92 @@ const userController = {
       const searchQuery = search
         ? {
             $or: [
-              { name: { $regex: search, $options: 'i' } },
-              { 'pm no': { $regex: search, $options: 'i' } },
-              { 'enrollment no': { $regex: search, $options: 'i' } },
-              { 'phone no 1': { $regex: search, $options: 'i' } },
-              { 'phone no 2': { $regex: search, $options: 'i' } },
-              { 'phone no 3': { $regex: search, $options: 'i' } },
-              { 'phone no 4': { $regex: search, $options: 'i' } },
-            ]
+              { name: { $regex: search, $options: "i" } },
+              { "pm no": { $regex: search, $options: "i" } },
+              { "enrollment no": { $regex: search, $options: "i" } },
+              { "phone no 1": { $regex: search, $options: "i" } },
+              { "phone no 2": { $regex: search, $options: "i" } },
+              { "phone no 3": { $regex: search, $options: "i" } },
+              { "phone no 4": { $regex: search, $options: "i" } },
+            ],
           }
         : {};
 
       // Build the final query
       const query = {
         _id: { $in: activeContactIds },
-        ...searchQuery
+        ...searchQuery,
       };
 
-      console.log('Debug - Final query:', JSON.stringify(query, null, 2));
+      console.log("Debug - Final query:", JSON.stringify(query, null, 2));
 
       // Get total count for pagination
       const total = await UsersData.countDocuments(query);
-      
-      console.log('Debug - Total contacts found:', total);
+
+      console.log("Debug - Total contacts found:", total);
 
       // Calculate skip based on page and limit
       const skip = (page - 1) * limit;
 
       // Get paginated contacts with full details
-      const contacts = await UsersData
-        .find(query)
-        .sort({ 'sl no': 1 })
+      const contacts = await UsersData.find(query)
+        .sort({ "sl no": 1 })
         .skip(skip)
         .limit(Math.min(limit, 100))
         .lean();
 
-      console.log('Debug - Fetched contacts count:', contacts.length);
+      console.log("Debug - Fetched contacts count:", contacts.length);
 
       // Process each contact to ensure all fields are present and add assignment data
-      const processedContacts = contacts.map(contact => {
+      const processedContacts = contacts.map((contact) => {
         // Find the assignment data for this contact
         const assignment = user.assignedContacts.find(
-          a => a.contact && a.contact.toString() === contact._id.toString()
+          (a) => a.contact && a.contact.toString() === contact._id.toString()
         );
 
         if (!assignment) {
-          console.log('Debug - No assignment found for contact:', contact._id);
+          console.log("Debug - No assignment found for contact:", contact._id);
         }
 
         // Ensure all required fields exist with fallback values
         const processedContact = {
           _id: contact._id,
-          name: contact.name || 'Not Available',
-          'pm no': contact['pm no'] || 'Not Available',
-          'enrollment no': contact['enrollment no'] || 'Not Available',
-          'phone no 1': contact['phone no 1'] || null,
-          'phone no 2': contact['phone no 2'] || null,
-          'phone no 3': contact['phone no 3'] || null,
-          'phone no 4': contact['phone no 4'] || null,
-          address: contact.address || 'Not Available',
+          name: contact.name || "Not Available",
+          "pm no": contact["pm no"] || "Not Available",
+          "enrollment no": contact["enrollment no"] || "Not Available",
+          "phone no 1": contact["phone no 1"] || null,
+          "phone no 2": contact["phone no 2"] || null,
+          "phone no 3": contact["phone no 3"] || null,
+          "phone no 4": contact["phone no 4"] || null,
+          address: contact.address || "Not Available",
           assignedTo: userId,
-          'sl no': contact['sl no'] || null,
+          "sl no": contact["sl no"] || null,
           assignedAt: assignment?.assignedAt || null,
-          status: assignment?.status || 'active',
-          phoneStatuses: []
+          status: assignment?.status || "active",
+          phoneStatuses: [],
         };
 
         // Process phone statuses
-        const phoneKeys = ['phone no 1', 'phone no 2', 'phone no 3', 'phone no 4'];
+        const phoneKeys = [
+          "phone no 1",
+          "phone no 2",
+          "phone no 3",
+          "phone no 4",
+        ];
         const existingStatuses = contact.phoneStatuses || [];
 
         processedContact.phoneStatuses = phoneKeys
-          .filter(key => contact[key])
-          .map(key => {
+          .filter((key) => contact[key])
+          .map((key) => {
             const existingStatus = existingStatuses.find(
-              status => status.number === contact[key]
+              (status) => status.number === contact[key]
             );
 
             return {
               number: contact[key],
               called: existingStatus?.called || false,
               lastUpdated: existingStatus?.lastUpdated || null,
-              _id: existingStatus?._id || new mongoose.Types.ObjectId()
+              _id: existingStatus?._id || new mongoose.Types.ObjectId(),
             };
           });
 
@@ -396,22 +398,22 @@ const userController = {
           page,
           totalPages: Math.ceil(total / limit),
           hasMore: page * limit < total,
-          pageSize: limit
-        }
+          pageSize: limit,
+        },
       };
 
-      console.log('Debug - Final response:', {
+      console.log("Debug - Final response:", {
         contactsCount: processedContacts.length,
-        pagination: response.pagination
+        pagination: response.pagination,
       });
 
       res.json(response);
-
     } catch (error) {
-      console.error('Error in getAssignedContacts:', error);
+      console.error("Error in getAssignedContacts:", error);
       res.status(500).json({
-        message: 'Failed to fetch assigned contacts',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: "Failed to fetch assigned contacts",
+        error:
+          process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   },
@@ -440,18 +442,17 @@ const userController = {
       const UsersData = mongoose.model("users_data", Contact.schema);
 
       // Convert contactIds to ObjectIds
-      const contactObjectIds = contactIds.map(id => new mongoose.Types.ObjectId(id));
+      const contactObjectIds = contactIds.map(
+        (id) => new mongoose.Types.ObjectId(id)
+      );
 
       // Only assign contacts that aren't already assigned
       const unassignedContacts = await UsersData.find({
         _id: { $in: contactObjectIds },
-        $or: [
-          { assignedTo: { $exists: false } },
-          { assignedTo: null }
-        ]
+        $or: [{ assignedTo: { $exists: false } }, { assignedTo: null }],
       });
 
-      const unassignedContactIds = unassignedContacts.map(c => c._id);
+      const unassignedContactIds = unassignedContacts.map((c) => c._id);
 
       if (unassignedContactIds.length === 0) {
         return res.status(400).json({
@@ -473,35 +474,37 @@ const userController = {
 
       // Get current user's assigned contacts
       const currentUser = await Auth.findById(userObjectId);
-      
+
       // Create new contact assignments
-      const newAssignments = unassignedContactIds.map(contactId => ({
+      const newAssignments = unassignedContactIds.map((contactId) => ({
         contact: contactId,
         assignedAt: new Date(),
-        status: 'active'
+        status: "active",
       }));
 
       // Add new assignments to user's assigned contacts
       const updatedAssignments = [
         ...(currentUser.assignedContacts || []),
-        ...newAssignments
+        ...newAssignments,
       ];
 
       // Update user's assigned contacts and stats
       await Auth.findByIdAndUpdate(userObjectId, {
-        $set: { 
+        $set: {
           assignedContacts: updatedAssignments,
           "stats.lastAssignment": new Date(),
           "stats.totalAssignedContacts": updatedAssignments.length,
-          "stats.activeAssignedContacts": updatedAssignments.filter(a => a.status === 'active').length
-        }
+          "stats.activeAssignedContacts": updatedAssignments.filter(
+            (a) => a.status === "active"
+          ).length,
+        },
       });
 
       // Get the updated contacts to verify the assignment
       const updatedContactsData = await UsersData.find({
         _id: { $in: unassignedContactIds },
       });
-      
+
       const successfullyAssigned = updatedContactsData.filter(
         (contact) =>
           contact.assignedTo && contact.assignedTo.toString() === userId
@@ -545,7 +548,9 @@ const userController = {
       const Auth = mongoose.model("Auth");
 
       // Convert contactIds to ObjectIds
-      const contactObjectIds = contactIds.map(id => new mongoose.Types.ObjectId(id));
+      const contactObjectIds = contactIds.map(
+        (id) => new mongoose.Types.ObjectId(id)
+      );
 
       // First, find which users have these contacts assigned
       const contacts = await UsersData.find(
@@ -554,11 +559,11 @@ const userController = {
       ).lean();
 
       // Get unique user IDs who had these contacts assigned
-      const affectedUserIds = [...new Set(
-        contacts
-          .map(contact => contact.assignedTo)
-          .filter(id => id) // Remove null/undefined
-      )];
+      const affectedUserIds = [
+        ...new Set(
+          contacts.map((contact) => contact.assignedTo).filter((id) => id) // Remove null/undefined
+        ),
+      ];
 
       // Remove these contacts from the assignedContacts arrays of affected users
       if (affectedUserIds.length > 0) {
@@ -577,10 +582,10 @@ const userController = {
         }
       );
 
-      res.json({ 
+      res.json({
         message: "Contacts unassigned successfully",
         unassignedCount: contactIds.length,
-        affectedUsers: affectedUserIds.length
+        affectedUsers: affectedUserIds.length,
       });
     } catch (error) {
       console.error("Error in unassignContacts:", error);
@@ -594,12 +599,12 @@ const userController = {
   // Get all users
   getUsers: async (req, res) => {
     try {
-      const Auth = mongoose.model('Auth');
+      const Auth = mongoose.model("Auth");
       const users = await Auth.aggregate([
         {
           $match: {
-            role: { $in: ['user', 'admin'] }
-          }
+            role: { $in: ["user", "admin"] },
+          },
         },
         {
           $project: {
@@ -607,35 +612,35 @@ const userController = {
             name: 1,
             email: 1,
             role: 1,
-            assignedContacts: { $size: { $ifNull: ['$assignedContacts', []] } },
+            assignedContacts: { $size: { $ifNull: ["$assignedContacts", []] } },
             stats: {
-              totalAssigned: { $size: { $ifNull: ['$assignedContacts', []] } },
-              totalCalls: { $ifNull: ['$stats.totalCallsMade', 0] },
-              successfulCalls: { $ifNull: ['$stats.uniqueContactsCalled', 0] },
+              totalAssigned: { $size: { $ifNull: ["$assignedContacts", []] } },
+              totalCalls: { $ifNull: ["$stats.totalCallsMade", 0] },
+              successfulCalls: { $ifNull: ["$stats.uniqueContactsCalled", 0] },
               pendingCalls: {
                 $subtract: [
-                  { $size: { $ifNull: ['$assignedContacts', []] } },
-                  { $ifNull: ['$stats.uniqueContactsCalled', 0] }
-                ]
+                  { $size: { $ifNull: ["$assignedContacts", []] } },
+                  { $ifNull: ["$stats.uniqueContactsCalled", 0] },
+                ],
               },
-              lastActive: '$stats.lastActive',
-              lastAssignment: '$stats.lastAssignment'
+              lastActive: "$stats.lastActive",
+              lastAssignment: "$stats.lastAssignment",
             },
             createdAt: 1,
-            updatedAt: 1
-          }
+            updatedAt: 1,
+          },
         },
         {
-          $sort: { name: 1 }
-        }
+          $sort: { name: 1 },
+        },
       ]);
 
       res.json(users);
     } catch (error) {
-      console.error('Error in getUsers:', error);
-      res.status(500).json({ 
-        message: error.message || 'Error fetching users',
-        error: process.env.NODE_ENV === 'development' ? error : undefined
+      console.error("Error in getUsers:", error);
+      res.status(500).json({
+        message: error.message || "Error fetching users",
+        error: process.env.NODE_ENV === "development" ? error : undefined,
       });
     }
   },

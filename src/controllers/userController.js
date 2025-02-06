@@ -67,6 +67,7 @@ const userController = {
                   "phone no 2": 1,
                   "phone no 3": 1,
                   "phone no 4": 1,
+                  address: 1,
                   assignedTo: 1,
                   phoneStatuses: 1,
                   "assignedToUser.name": 1,
@@ -642,6 +643,31 @@ const userController = {
         message: error.message || "Error fetching users",
         error: process.env.NODE_ENV === "development" ? error : undefined,
       });
+    }
+  },
+
+  // Get a single user's data from users_data collection
+  getUserDataById: async (req, res) => {
+    try {
+      const userId = req.params.id;
+      
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+
+      const UsersData = mongoose.model("users_data", Contact.schema);
+      const userData = await UsersData.findById(userId)
+        .populate('assignedTo', 'name email')
+        .lean();
+
+      if (!userData) {
+        return res.status(404).json({ message: "User data not found" });
+      }
+
+      res.json(userData);
+    } catch (error) {
+      console.error("Error in getUserDataById:", error);
+      res.status(500).json({ message: "Error fetching user data" });
     }
   },
 };

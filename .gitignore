@@ -1,0 +1,51 @@
+# Node.js dependencies
+/node_modules
+
+/src/toberemovede
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# dotenv environment variables
+.env
+
+# Typescript build output
+/dist
+/build
+
+# Optional npm cache directory
+.npm
+
+# IDE and editor settings
+.vscode/
+.idea/
+.DS_Store
+
+# System files
+Thumbs.db
+.DS_Store
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Ignore compiled JavaScript files (if TypeScript project compiles to src or dist)
+/src/**/*.js
+/src/**/*.js.map
+/dist/**/*.js
+/dist/**/*.js.map
+
+# Ignore coverage reports
+coverage/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# Ignore lock files if you want to use a specific package manager only
+package-lock.json
+yarn.lock

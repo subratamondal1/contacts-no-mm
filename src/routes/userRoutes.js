@@ -9,6 +9,9 @@ router.use(authenticate);
 // Get all users data with pagination and search
 router.get("/users-data", userController.getUsersData);
 
+// Get a single user's data by ID
+router.get("/users-data/:id", userController.getUserDataById);
+
 // Get contacts with pagination and filters
 router.get("/contacts", userController.getContacts);
 

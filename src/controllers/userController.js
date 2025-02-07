@@ -24,6 +24,7 @@ const userController = {
             { "phone no 2": { $regex: search, $options: "i" } },
             { "phone no 3": { $regex: search, $options: "i" } },
             { "phone no 4": { $regex: search, $options: "i" } },
+            { address: { $regex: search, $options: "i" } },
           ],
         };
       }
@@ -111,43 +112,91 @@ const userController = {
   // Toggle phone called status
   togglePhoneCalled: async (req, res) => {
     try {
-      const UsersData = mongoose.model("users_data", Contact.schema);
-      const user = await UsersData.findById(req.params.id);
-
-      if (!user) {
-        return res.status(404).json({ message: "Contact not found" });
-      }
-
       const { phoneNumber } = req.body;
+      const contactId = req.params.id;
+      const userId = req.user._id;
+
       if (!phoneNumber) {
         return res.status(400).json({ message: "Phone number is required" });
       }
 
-      let phoneStatus = user.phoneStatuses?.find(
-        (status) => status.number === phoneNumber
-      );
+      // Update both collections to maintain consistency
+      const Contact = mongoose.model("Contact");
+      const UsersData = mongoose.model("users_data", Contact.schema);
 
-      if (!phoneStatus) {
-        if (!user.phoneStatuses) {
-          user.phoneStatuses = [];
+      // Get both documents
+      const [contact, userData] = await Promise.all([
+        Contact.findById(contactId),
+        UsersData.findById(contactId)
+      ]);
+
+      if (!contact || !userData) {
+        return res.status(404).json({ message: "Contact not found" });
+      }
+
+      // Function to update phone status
+      const updatePhoneStatus = (doc) => {
+        if (!doc.phoneStatuses) {
+          doc.phoneStatuses = [];
         }
-        phoneStatus = {
-          number: phoneNumber,
-          called: false,
-          calledBy: null,
-          lastCalled: null,
-        };
-        user.phoneStatuses.push(phoneStatus);
+
+        let phoneStatus = doc.phoneStatuses.find(
+          (status) => status.number === phoneNumber
+        );
+
+        if (!phoneStatus) {
+          phoneStatus = {
+            number: phoneNumber,
+            called: true,
+            calledBy: userId,
+            lastCalled: new Date()
+          };
+          doc.phoneStatuses.push(phoneStatus);
+        } else {
+          phoneStatus.called = !phoneStatus.called;
+          if (phoneStatus.called) {
+            phoneStatus.calledBy = userId;
+            phoneStatus.lastCalled = new Date();
+          }
+        }
+        return phoneStatus.called;
+      };
+
+      // Update both documents
+      const isCallMade = updatePhoneStatus(contact);
+      updatePhoneStatus(userData);
+
+      // If this is a new call, update the user's stats in Auth collection
+      if (isCallMade) {
+        const auth = await mongoose.model("Auth").findById(userId);
+        if (auth) {
+          auth.stats = auth.stats || {};
+          auth.stats.lastActive = new Date();
+          auth.stats.totalCallsMade = (auth.stats.totalCallsMade || 0) + 1;
+          
+          // Update unique contacts called
+          const uniquePhonesCalled = new Set(
+            contact.phoneStatuses
+              .filter(status => status.called && status.calledBy?.toString() === userId.toString())
+              .map(status => status.number)
+          );
+          auth.stats.uniqueContactsCalled = uniquePhonesCalled.size;
+          
+          await auth.save();
+        }
       }
 
-      phoneStatus.called = !phoneStatus.called;
-      if (phoneStatus.called) {
-        phoneStatus.calledBy = req.user._id;
-        phoneStatus.lastCalled = new Date();
-      }
+      // Save both contact documents
+      await Promise.all([
+        contact.save(),
+        userData.save()
+      ]);
 
-      await user.save();
-      res.json(user);
+      res.json({
+        success: true,
+        contact: contact,
+        isCallMade
+      });
     } catch (error) {
       console.error("Error in togglePhoneCalled:", error);
       res.status(500).json({

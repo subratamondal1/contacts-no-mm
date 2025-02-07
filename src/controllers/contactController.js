@@ -75,34 +75,73 @@ const contactController = {
       const userId = req.user.userId;
       const { page = 1, limit = 20, search = '' } = req.query;
       
+      // Clean and prepare search terms
+      const searchTerm = search.trim()
+        .replace(/[&.,\-]/g, '') // Remove special characters
+        .replace(/\s+/g, ' ')    // Normalize spaces
+        .trim();
+
+      console.log('Original search:', search);
+      console.log('Cleaned search term:', searchTerm);
+      
       const query = {
-        assignedTo: userId,
-        ...(search ? {
-          $or: [
-            { name: { $regex: search, $options: 'i' } },
-            { email: { $regex: search, $options: 'i' } },
-            { phone: { $regex: search, $options: 'i' } }
-          ]
-        } : {})
+        assignedTo: userId
       };
+
+      if (searchTerm) {
+        // Create a case-insensitive regex that matches the term anywhere in the field
+        const searchRegex = new RegExp(searchTerm.split('').join('.*'), 'i');
+        
+        query.$or = [
+          { name: searchRegex },
+          { email: searchRegex },
+          { phone: searchRegex },
+          { address: searchRegex },
+          { "pm no": searchRegex },
+          { "enrollment no": searchRegex }
+        ];
+      }
+
+      console.log('MongoDB Query:', JSON.stringify(query, null, 2));
 
       const contacts = await Contact.find(query)
         .populate('assignedTo', 'name email')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
-        .limit(parseInt(limit));
+        .limit(parseInt(limit))
+        .lean();
 
       const total = await Contact.countDocuments(query);
 
+      console.log(`Found ${contacts.length} contacts out of ${total} total`);
+
+      // Process and normalize the response data
+      const processedContacts = contacts.map(contact => {
+        // Clean up the address for display
+        const displayAddress = contact.address 
+          ? contact.address.replace(/\s+/g, ' ').trim()
+          : 'Not Available';
+
+        return {
+          ...contact,
+          address: displayAddress,
+          "pm no": contact["pm no"] || 'Not Available',
+          "enrollment no": contact["enrollment no"] || 'Not Available'
+        };
+      });
+
       res.json({
-        contacts,
+        contacts: processedContacts,
         currentPage: parseInt(page),
         totalPages: Math.ceil(total / limit),
         totalContacts: total
       });
     } catch (error) {
       console.error('Error getting assigned contacts:', error);
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ 
+        message: 'Failed to fetch assigned contacts',
+        error: error.message 
+      });
     }
   },
 
